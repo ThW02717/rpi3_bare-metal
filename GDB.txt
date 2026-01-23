@@ -1,0 +1,249 @@
+1) GDB 是什麼？你現在在做什麼事？
+GDB（GNU Debugger）是什麼
+
+除錯器。它不是幫你「跑程式」，而是讓你：
+
+停在某行/某個指令（breakpoint）
+
+一步一步走（step）
+
+看暫存器（register）
+
+看記憶體（memory）
+
+看目前跑到哪（PC / program counter）
+
+你現在是 bare-metal（沒有 OS），所以：
+
+沒有「作業系統幫你載入程式、幫你管理符號、幫你把 stdout 印出來」
+
+你要靠 QEMU 這種 emulator 來提供「機器」，再用 GDB 遠端連上去看它在跑什麼。
+
+2) 你剛剛的「QEMU + GDB」整體流程在幹嘛？
+
+你做的是這個模型：
+
+QEMU = 模擬一台樹莓派（CPU + 記憶體 + 裝置）
+GDB = 從外面用「遠端除錯」連上去看 QEMU 內部 CPU 狀態
+
+所以流程是：
+
+你用 QEMU 跑 kernel8.img（這是 raw binary）
+
+QEMU 同時開一個 GDB server port（預設 TCP 1234）
+
+你用 GDB 連到這個 port
+
+你在 GDB 下斷點、單步、看寄存器，觀察 boot.S → kernel_main → uart_init 等是否真的有執行
+
+3) 你看到的名詞：B / C / target 是什麼？
+(1) target remote :1234 是什麼？
+
+target remote =「我要連到一個遠端目標」
+
+:1234 =「連到本機的 TCP 1234 port」
+
+這個 port 是 QEMU 用 -s 或 -S -s 開出來的 GDB stub
+
+所以這句意思是：
+
+GDB：我不要 debug 本機程式，我要去 debug QEMU 裡那顆 AArch64 CPU。
+
+(2) b 是什麼？（breakpoint）
+
+b = break = 設定斷點
+
+斷點意思是：「程式跑到某個位置就停住」
+
+你做了：
+
+b _start：跑到 boot.S 的 _start 停住
+
+b kernel_main：跑到 C 的 kernel_main() 停住
+
+為什麼有用：
+
+你可以確認：
+
+你的 linker script 是不是把 _start 放在正確位置（通常 0x80000）
+
+boot code 有沒有真的跳到 kernel_main
+
+(3) c 是什麼？（continue）
+
+c = continue
+
+意思是：「從目前停住的地方繼續跑，直到下一個斷點或 crash」
+
+所以你的流程大概是：
+
+設斷點
+
+c
+
+命中斷點（GDB 顯示 hit Breakpoint）
+
+再 c 繼續跑到下一個斷點
+
+4) 你剛剛看到的「兩段 QEMU 指令」各在幹嘛？
+(A) -d in_asm
+
+你跑的：
+
+qemu-system-aarch64 ... -d in_asm
+
+
+這會讓 QEMU 把 CPU 每次執行的指令 dump 出來（很吵，適合粗看「有沒有在跑」）。
+
+缺點：
+
+不好讀（都是十六進位）
+
+看不到符號（不知道哪個 function）
+
+(B) -S -s
+
+你跑的（或類似）：
+
+qemu-system-aarch64 ... -S -s
+
+-s 是什麼？
+
+等價於：-gdb tcp::1234
+
+就是開一個 GDB server 在 1234 port
+
+-S 是什麼？
+
+Start CPU in stopped state
+
+意思是：「一開始先不要跑，先停住等 GDB 連上來」
+
+所以你用 -S -s 是正確姿勢，因為你想在 _start 一開始就掌控它。
+
+5) 你在 GDB 裡看到的那些輸出代表什麼？
+
+你看到：
+
+Breakpoint 1 at 0x80000
+
+代表 _start 的符號被解析到了 0x80000（超重要：代表你的連結/段落大致對了）
+
+Thread 1 hit Breakpoint 1, 0x... in _start()
+
+代表 CPU 的 PC 已經跑到 _start，boot code 真的有進來
+
+你後來又 hit 到 kernel_main：
+
+代表 boot.S 做完初始化後有跳到 C 的 kernel_main()
+
+這就是你目前最硬的「能跑」證據：
+控制流程正確：_start → kernel_main。
+
+6) 你截圖裡的幾個 GDB 指令在幹嘛？
+
+你截圖有：
+
+x/12i $pc
+
+x = examine memory
+
+/12i = 取 12 個單位、用 instruction format 顯示
+
+$pc = program counter（目前正在執行的位址）
+
+所以這句意思：
+
+把「接下來要執行的 12 條指令」反組譯出來給我看。
+
+你看到：
+
+bl uart_init
+
+bl uart_send_string
+
+bl uart_recv
+這說明 kernel_main() 裡的流程就是照你寫的那樣在跑。
+
+info reg sp
+
+顯示暫存器 sp（stack pointer）
+
+你看到 sp = 0x3ffff0（類似）
+
+這用來檢查：
+
+你 boot.S 裡 mov sp, #LOW_MEMORY 是否真的生效
+
+stack pointer 有沒有落在你預期的安全記憶體區
+
+7) 你剛剛踩到的坑：為什麼一開始 kernel8.elf not found？
+
+你後來才發現 kernel8.elf 在 build/ 裡。
+
+重點觀念：
+
+img：QEMU 真正執行的是 kernel8.img（raw binary，沒有符號資訊）
+
+elf：GDB 需要 kernel8.elf 才知道符號（_start, kernel_main…）
+
+所以正確作法是：
+
+QEMU 跑 img
+
+GDB file build/kernel8.elf（或直接 gdb-multiarch build/kernel8.elf）
+
+target remote :1234
+
+8) 你現在會用的最小「標準除錯腳本」
+Terminal 1（跑 QEMU）
+qemu-system-aarch64 -M raspi3b -kernel kernel8.img -display none -S -s
+
+Terminal 2（跑 GDB）
+gdb-multiarch build/kernel8.elf
+
+
+進入 gdb 後：
+
+target remote :1234
+b _start
+b kernel_main
+c
+
+
+命中 _start 後：
+
+x/10i $pc
+info reg sp
+
+
+繼續到 kernel_main：
+
+c
+x/20i $pc
+
+9) 你要怎麼用這套確認「我寫的東西真的在跑？」
+
+你不需要先看到 UART 輸出才算成功。你可以用 GDB 做「硬證據」：
+
+_start 有命中（boot code 有跑）
+
+kernel_main 有命中（C 有跑）
+
+uart_init 有被 call（你可以 b uart_init 再 c）
+
+uart_send_string 有被 call（再下斷點）
+
+例如：
+
+b uart_init
+b uart_send_string
+b uart_send
+c
+
+
+如果這些斷點都會 hit：
+
+代表你的程式確實依序執行到了 UART 驅動的邏輯
+
+即使 QEMU 沒把 mini UART 真正輸出到終端，也能證明「你的 code path 是活的
