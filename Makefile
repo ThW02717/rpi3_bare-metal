@@ -1,10 +1,15 @@
 ARMGNU ?= aarch64-linux-gnu
+QEMU ?= qemu-system-aarch64
+QEMU_SMP ?= 4
+QEMU_FLAGS ?= -M raspi3b -serial stdio -display none -smp $(QEMU_SMP)
+QEMU_DEFS ?= -DQEMU
 
 COPS = -Wall -nostdlib -nostartfiles -ffreestanding -Iinclude -mgeneral-regs-only
 ASMOPS = -Iinclude 
-
 BUILD_DIR = build
 SRC_DIR = src
+
+.PHONY: all clean qemu
 
 all : kernel8.img
 
@@ -29,3 +34,10 @@ DEP_FILES = $(OBJ_FILES:%.o=%.d)
 kernel8.img: $(SRC_DIR)/linker.ld $(OBJ_FILES)
 	$(ARMGNU)-ld -T $(SRC_DIR)/linker.ld -o $(BUILD_DIR)/kernel8.elf  $(OBJ_FILES)
 	$(ARMGNU)-objcopy $(BUILD_DIR)/kernel8.elf -O binary kernel8.img
+
+qemu: COPS += $(QEMU_DEFS)
+qemu: ASMOPS += $(QEMU_DEFS)
+# Target: prerequsite
+# $<: the first prerequsite
+qemu: kernel8.img
+	$(QEMU) $(QEMU_FLAGS) -kernel $<

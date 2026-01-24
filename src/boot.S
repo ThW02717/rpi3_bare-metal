@@ -21,7 +21,21 @@ master:
 	adr	x1, bss_end
 	sub	x1, x1, x0
 	bl 	memzero
-	
+	// ------------------------------------------------------------
+    // QEMU raspi3b: release secondary cores from holding pen
+    // Assumption: spin-table at 0xD8, slot = 0xD8 + core_id*8
+    // ------------------------------------------------------------
+#ifdef QEMU
+    adr  x6, _start          // x6 = entry address (your real kernel entry)
+    mov  x7, #0xD8           // x7 = spin-table base (hypothesis from QEMU regs)
+
+    str  x6, [x7, #8]        // slot for core1
+    str  x6, [x7, #16]       // slot for core2
+    str  x6, [x7, #24]       // slot for core3
+
+    dsb  sy                  // ensure stores are globally visible before wakeup
+    sev                      // wake secondary cores waiting in WFE
+#endif
 	// set boot_ready = 1 , secondary go
 	adrp x2, boot_ready // which page
 	add  x2, x2, :lo12:boot_ready //get boot_ready absolute addr
