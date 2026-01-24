@@ -1,10 +1,12 @@
 ARMGNU ?= aarch64-linux-gnu
 QEMU ?= qemu-system-aarch64
 QEMU_SMP ?= 4
+NUM_CORES ?= $(QEMU_SMP)
 QEMU_FLAGS ?= -M raspi3b -serial stdio -display none -smp $(QEMU_SMP)
 QEMU_DEFS ?= -DQEMU
 
 COPS = -Wall -nostdlib -nostartfiles -ffreestanding -Iinclude -mgeneral-regs-only
+COPS += -DNUM_CORES=$(NUM_CORES)
 ASMOPS = -Iinclude 
 BUILD_DIR = build
 SRC_DIR = src
