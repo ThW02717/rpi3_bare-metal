@@ -1,4 +1,5 @@
 #include "uart.h"
+#include "mailbox.h"
 
 #ifndef NUM_CORES
 #define NUM_CORES 4
@@ -115,8 +116,25 @@ static void shell_run(void)
 			uart_send_string("help  : print all available commands\r\n");
 			uart_send_string("hello : print Hello World!\r\n");
 			uart_send_string("reboot:the device\r\n");
+			uart_send_string("info  : print board and memory info\r\n");
 		} else if (streq(buf, "hello")) {
 			uart_send_string("Hello World!\r\n");
+		} else if (streq(buf, "info")) {
+			unsigned int arm_base = 0;
+			unsigned int arm_size = 0;
+			uart_send_string("Board revision: 0x");
+			uart_send_hex(get_board_revision());
+			uart_send_string("\r\n");
+			if (get_arm_memory(&arm_base, &arm_size)) {
+				uart_send_string("ARM mem base : 0x");
+				uart_send_hex(arm_base);
+				uart_send_string("\r\n");
+				uart_send_string("ARM mem size : 0x");
+				uart_send_hex(arm_size);
+				uart_send_string(" (");
+				uart_send_dec(arm_size / (1024u * 1024u));
+				uart_send_string(" MB)\r\n");
+			}
 		} else if (streq(buf, "reboot")) {
 			uart_send_string("reboot the device\r\n");
 		}else {
@@ -134,6 +152,21 @@ void kernel_main(unsigned long core_id)
 	if (core_id == 0) {
 		uart_init();
 		delay(5000000);
+		uart_send_string("Board revision: 0x");
+		uart_send_hex(get_board_revision());
+		uart_send_string("\r\n");
+		unsigned int arm_base = 0;
+		unsigned int arm_size = 0;
+		if (get_arm_memory(&arm_base, &arm_size)) {
+			uart_send_string("ARM mem base : 0x");
+			uart_send_hex(arm_base);
+			uart_send_string("\r\n");
+			uart_send_string("ARM mem size : 0x");
+			uart_send_hex(arm_size);
+			uart_send_string(" (");
+			uart_send_dec(arm_size / (1024u * 1024u));
+			uart_send_string(" MB)\r\n");
+		}
 		uart_ready = 1;
 	} else {
 		while (uart_ready == 0) {

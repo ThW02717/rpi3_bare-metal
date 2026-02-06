@@ -80,3 +80,33 @@ void uart_send_string(const char* str)
 		uart_send((char)str[i]);
 	}
 }
+
+void uart_send_hex(unsigned int value)
+{
+	for (int shift = 28; shift >= 0; shift -= 4) {
+		unsigned int digit = (value >> shift) & 0xFu;
+		// transform to hex
+		char c = (digit < 10u) ? (char)('0' + digit) : (char)('a' + (digit - 10u));
+		uart_send(c);
+	}
+}
+
+void uart_send_dec(unsigned int value)
+{
+	char buf[10];
+	int i = 0;
+
+	if (value == 0) {
+		uart_send('0');
+		return;
+	}
+
+	while (value > 0 && i < (int)sizeof(buf)) {
+		buf[i++] = (char)('0' + (value % 10u));
+		value /= 10u;
+	}
+
+	while (i-- > 0) {
+		uart_send(buf[i]);
+	}
+}
