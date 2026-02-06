@@ -1,5 +1,6 @@
 #include "uart.h"
 #include "mailbox.h"
+#include "power.h"
 
 #ifndef NUM_CORES
 #define NUM_CORES 4
@@ -115,7 +116,7 @@ static void shell_run(void)
 		if (streq(buf, "help")) {
 			uart_send_string("help  : print all available commands\r\n");
 			uart_send_string("hello : print Hello World!\r\n");
-			uart_send_string("reboot:the device\r\n");
+			uart_send_string("reboot: reboot the device\r\n");
 			uart_send_string("info  : print board and memory info\r\n");
 		} else if (streq(buf, "hello")) {
 			uart_send_string("Hello World!\r\n");
@@ -137,6 +138,13 @@ static void shell_run(void)
 			}
 		} else if (streq(buf, "reboot")) {
 			uart_send_string("reboot the device\r\n");
+			for (volatile unsigned int i = 0; i < 200000u; ++i) {
+				asm volatile("nop");
+			}
+			reboot(100);
+			while (1) {
+				asm volatile("wfe");
+			}
 		}else {
 			uart_send_string("Unknown command: ");
 			uart_send_string(buf);
